@@ -111,6 +111,9 @@ void qt_set_sequence_auto_mnemonic(bool b);
 #include "qt_mediamenu.hpp"
 #include "qt_util.hpp"
 #include "qt_osd.hpp"
+#ifdef IDW
+#    include "qt_debuggerwindow.hpp"
+#endif
 
 #if defined __unix__ && !defined __HAIKU__
 #    ifndef Q_OS_MACOS
@@ -320,6 +323,17 @@ MainWindow::MainWindow(QWidget *parent)
     toolbar_label_layout->addWidget(toolbar_label);
     toolbar_label_widget->setMinimumWidth(0);
     toolbar_label_widget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+
+#ifdef IDW
+    /* The Internal Debugger Window, from the bottom of the Tools menu or the toolbar. */
+    auto *actionDebugger = new QAction(QIcon(":/menuicons/qt/icons/debugger.ico"), tr("Internal Debugger..."), this);
+    actionDebugger->setToolTip(tr("Internal Debugger"));
+    connect(actionDebugger, &QAction::triggered, this, [this] { DebuggerWindow::showWindow(this); });
+    ui->menuTools->addSeparator();
+    ui->menuTools->addAction(actionDebugger);
+    ui->toolBar->addSeparator();
+    ui->toolBar->addAction(actionDebugger);
+#endif
 
     ui->toolBar->addWidget(toolbar_label_widget);
 
@@ -1674,6 +1688,12 @@ MainWindow::FindAcceleratorSeq(const char *name)
 bool
 MainWindow::eventFilter(QObject *receiver, QEvent *event)
 {
+#ifdef IDW
+    /* Let the Internal Debugger Window keep its own keystrokes. */
+    if (DebuggerWindow::isOwnObject(receiver))
+        return QMainWindow::eventFilter(receiver, event);
+#endif
+
     if (event->type() == QEvent::KeyPress || event->type() == QEvent::KeyRelease) {
         auto      *ke   = static_cast<QKeyEvent *>(event);
         const bool down = event->type() == QEvent::KeyPress;

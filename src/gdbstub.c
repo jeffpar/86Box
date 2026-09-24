@@ -48,6 +48,7 @@
 #include <86box/plat.h>
 #include <86box/thread.h>
 #include <86box/gdbstub.h>
+#include <86box/idw.h>
 
 #define FAST_RESPONSE(s)         \
     strcpy(client->response, s); \
@@ -734,6 +735,61 @@ gdbstub_client_read_reg(int index, uint8_t *buf)
 
     return width;
 }
+
+/* Recompute the page watchpoint map, and drop cached page lookups so watched pages take the checked path. */
+static void
+gdbstub_update_watch_pages(void)
+{
+    memset(gdbstub_watch_pages, 0, sizeof(gdbstub_watch_pages));
+
+    for (int l = 0; l < 3; l++) {
+        gdbstub_breakpoint_t *breakpoint = (l == 0) ? first_rwatch : ((l == 1) ? first_wwatch : first_awatch);
+        while (breakpoint) {
+            /* Flag this watchpoint's corresponding pages as having a watchpoint. */
+            uint32_t last = (breakpoint->end - 1) >> MEM_GRANULARITY_BITS;
+            for (uint32_t i = breakpoint->addr >> MEM_GRANULARITY_BITS; i <= last; i++)
+                gdbstub_watch_pages[i >> 6] |= (1ULL << (i & 63));
+            breakpoint = breakpoint->next;
+        }
+    }
+
+    flushmmucache();
+}
+
+#ifdef IDW
+/*
+ * Add or remove an Internal Debugger Window breakpoint in the stub's own lists; type is
+ * GDBSTUB_BREAK_HW, GDBSTUB_BREAK_RWATCH or GDBSTUB_BREAK_WWATCH, and addr is linear.
+ * Returns 0 if adding a breakpoint that already exists, or removing one that doesn't.
+ */
+int
+gdbstub_idw_breakpoint(int add, int type, uint32_t addr)
+{
+    gdbstub_breakpoint_t **first = (type == GDBSTUB_BREAK_HW) ? &first_hwbreak : ((type == GDBSTUB_BREAK_RWATCH) ? &first_rwatch : &first_wwatch);
+    gdbstub_breakpoint_t **link  = first;
+
+    while (*link && ((*link)->addr != addr))
+        link = &(*link)->next;
+
+    if (add) {
+        if (*link)
+            return 0;
+        *link         = calloc(1, sizeof(gdbstub_breakpoint_t));
+        (*link)->addr = addr;
+        (*link)->end  = addr + 1;
+    } else {
+        gdbstub_breakpoint_t *breakpoint = *link;
+        if (!breakpoint)
+            return 0;
+        *link = breakpoint->next;
+        free(breakpoint);
+    }
+
+    if (type != GDBSTUB_BREAK_HW)
+        gdbstub_update_watch_pages();
+    return 1;
+}
+#endif
 
 static void
 gdbstub_client_packet(gdbstub_client_t *client)
@@ -1424,35 +1480,8 @@ unknown:
             }
 
             /* Update the page watchpoint map if we're dealing with a watchpoint. */
-            if (client->packet[1] >= '2') {
-                /* Clear this watchpoint's corresponding page map groups,
-                   as everything is going to be recomputed soon anyway. */
-                memset(&gdbstub_watch_pages[j >> (MEM_GRANULARITY_BITS + 6)], 0,
-                       (((k - 1) >> (MEM_GRANULARITY_BITS + 6)) + 1) * sizeof(gdbstub_watch_pages[0]));
-
-                /* Go through all watchpoint lists. */
-                l          = 0;
-                breakpoint = first_rwatch;
-                while (1) {
-                    if (breakpoint) {
-                        /* Flag this watchpoint's corresponding pages as having a watchpoint. */
-                        k = (breakpoint->end - 1) >> MEM_GRANULARITY_BITS;
-                        for (i = breakpoint->addr >> MEM_GRANULARITY_BITS; i <= k; i++)
-                            gdbstub_watch_pages[i >> 6] |= (1ULL << (i & 63));
-
-                        breakpoint = breakpoint->next;
-                    } else {
-                        /* Jump from list to list as a shortcut. */
-                        if (l == 0)
-                            breakpoint = first_wwatch;
-                        else if (l == 1)
-                            breakpoint = first_awatch;
-                        else
-                            break;
-                        l++;
-                    }
-                }
-            }
+            if (client->packet[1] >= '2')
+                gdbstub_update_watch_pages();
 
             /* Respond positively. */
             goto ok;
@@ -1543,6 +1572,11 @@ gdbstub_cpu_exec(int32_t cycs)
         }
         stop_reason[stop_reason_len] = '\0';
 
+#ifdef IDW
+        /* Tell the Internal Debugger Window why the CPU stopped. */
+        idw_note_stop(gdbstub_step, (gdbstub_step >= GDBSTUB_BREAK_RWATCH) ? watch_addr : (cs + cpu_state.pc));
+#endif
+
         /* Don't execute the CPU any further if single-stepping. */
         gdbstub_step = GDBSTUB_BREAK;
     }
@@ -1585,6 +1619,11 @@ gdbstub_cpu_exec(int32_t cycs)
 #endif
     }
     thread_release_mutex(client_list_mutex);
+
+#ifdef IDW
+    /* Service the Internal Debugger Window. */
+    idw_process();
+#endif
 
     /* Flag that we're now out of the debugger context. */
     in_gdbstub = 0;
@@ -1758,7 +1797,12 @@ void
 gdbstub_cpu_init(void)
 {
     /* Replace cpu_exec with our own function if the GDB stub is active. */
+#ifdef IDW
+    /* The Internal Debugger Window needs it even without a GDB server. */
+    if (cpu_exec != gdbstub_cpu_exec) {
+#else
     if ((gdbstub_socket != -1) && (cpu_exec != gdbstub_cpu_exec)) {
+#endif
         cpu_exec_shadow = cpu_exec;
         cpu_exec        = gdbstub_cpu_exec;
     }
@@ -1767,6 +1811,10 @@ gdbstub_cpu_init(void)
 int
 gdbstub_instruction(void)
 {
+#ifdef IDW
+    idw_instructions++;
+#endif
+
     /* Check hardware breakpoints if any are present. */
     gdbstub_breakpoint_t *breakpoint = first_hwbreak;
     if (breakpoint) {
@@ -1877,6 +1925,15 @@ gdbstub_mem_access(uint32_t *addrs, int access)
 void
 gdbstub_init(void)
 {
+#ifdef IDW
+    /* The cpu_exec hook needs these even without a GDB server. */
+    client_list_mutex = thread_create_mutex();
+    idw_init();
+#    ifdef GDBSTUB_NO_SERVER
+    return;
+#    endif
+#endif
+
 #ifdef _WIN32
     WSAStartup(MAKEWORD(2, 2), &wsa);
 #endif
@@ -1925,7 +1982,8 @@ gdbstub_init(void)
     }
 
     /* Create client list mutex. */
-    client_list_mutex = thread_create_mutex();
+    if (!client_list_mutex)
+        client_list_mutex = thread_create_mutex();
 
     /* Clear watchpoint page map. */
     memset(gdbstub_watch_pages, 0, sizeof(gdbstub_watch_pages));

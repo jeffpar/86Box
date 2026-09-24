@@ -324,6 +324,10 @@ target_include_directories(osd_backend PRIVATE ${OSD_DIR}/imgui ${Vulkan_INCLUDE
 target_link_libraries(86Box osd_backend)
 
 target_sources(ui PRIVATE qt_osd.cpp qt_osd.hpp qt_osd_raster.cpp qt_osd_raster.hpp)
+
+if(IDW)
+    target_sources(ui PRIVATE qt_debuggerwindow.cpp qt_debuggerwindow.hpp)
+endif()
 target_include_directories(ui PRIVATE ${OSD_DIR} ${OSD_DIR}/imgui)
 
 if(EMU_BUILD_NUM)

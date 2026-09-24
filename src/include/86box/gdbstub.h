@@ -57,6 +57,9 @@ extern int  gdbstub_int3(void);
 extern void gdbstub_mem_access(uint32_t *addrs, int access);
 extern void gdbstub_init(void);
 extern void gdbstub_close(void);
+#    ifdef IDW
+extern int gdbstub_idw_breakpoint(int add, int type, uint32_t addr);
+#    endif
 
 #else
 

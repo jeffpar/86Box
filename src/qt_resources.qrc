@@ -104,6 +104,7 @@
         <file>qt/icons/take_raw_screenshot.ico</file>
         <file>qt/icons/copy_screenshot.ico</file>
         <file>qt/icons/copy_raw_screenshot.ico</file>
+        <file>qt/icons/debugger.ico</file>
     </qresource>
     <qresource prefix="/misc">
         <file>qt/icons/warning.ico</file>

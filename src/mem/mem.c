@@ -613,6 +613,12 @@ addreadlookup(uint32_t virt, uint32_t phys)
     if (readlookup2[index] != (uintptr_t) LOOKUP_INV)
         return;
 
+#ifdef USE_GDBSTUB
+    /* Keep pages with watchpoints on the slow path, where accesses are checked. */
+    if (gdbstub_watch_pages[virt >> (MEM_GRANULARITY_BITS + 6)] & (1ULL << ((virt >> MEM_GRANULARITY_BITS) & 63)))
+        return;
+#endif
+
     if (readlookup[cur_rln] != (int) 0xffffffff)
         readlookup2[large_offset | readlookup[cur_rln]] = LOOKUP_INV;
 
@@ -632,6 +638,12 @@ addwritelookup(uint32_t virt, uint32_t phys)
 
     if (page_lookup[virt >> 12])
         return;
+
+#ifdef USE_GDBSTUB
+    /* Keep pages with watchpoints on the slow path, where accesses are checked. */
+    if (gdbstub_watch_pages[virt >> (MEM_GRANULARITY_BITS + 6)] & (1ULL << ((virt >> MEM_GRANULARITY_BITS) & 63)))
+        return;
+#endif
 
     if (writelookup[writelnext] != -1) {
         page_lookup[writelookup[writelnext]]  = NULL;
@@ -711,6 +723,8 @@ read_mem_b(uint32_t addr)
     mem_mapping_t *map;
     uint8_t        ret        = 0xff;
 
+    GDBSTUB_MEM_ACCESS(addr, GDBSTUB_MEM_READ, 1);
+
     mem_logical_addr = addr;
     addr &= rammask;
 
@@ -726,6 +740,8 @@ read_mem_w(uint32_t addr)
 {
     mem_mapping_t *map;
     uint16_t       ret        = 0xffff;
+
+    GDBSTUB_MEM_ACCESS(addr, GDBSTUB_MEM_READ, 2);
 
     mem_logical_addr = addr;
     addr &= rammask;
@@ -749,6 +765,8 @@ write_mem_b(uint32_t addr, uint8_t val)
 {
     mem_mapping_t *map;
 
+    GDBSTUB_MEM_ACCESS(addr, GDBSTUB_MEM_WRITE, 1);
+
     mem_logical_addr = addr;
     addr &= rammask;
 
@@ -761,6 +779,8 @@ void
 write_mem_w(uint32_t addr, uint16_t val)
 {
     mem_mapping_t *map;
+
+    GDBSTUB_MEM_ACCESS(addr, GDBSTUB_MEM_WRITE, 2);
 
     mem_logical_addr = addr;
     addr &= rammask;
