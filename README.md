@@ -1,3 +1,19 @@
+## Building the `idw` Branch on macOS
+
+This fork contains an `idw` branch that adds an **Internal Debugger Window** to 86Box, making it easy to debug virtual machines *and* customize the debugging experience without having to muck with `gdb`.
+
+```
+git clone -b idw https://github.com/jeffpar/86Box.git fork
+brew install cmake ninja pkg-config freetype sdl3 zstd libpng openal-soft rtmidi libslirp fluid-synth libsndfile libserialport qt@5
+cmake -B idw -S fork -DCMAKE_PREFIX_PATH="$(brew --prefix qt5);$(brew --prefix openal-soft)" -DCMAKE_AUTOMOC_MOC_OPTIONS=-nn -DIDW=ON --preset regular
+cmake --build idw
+open idw/src/86Box.app
+```
+
+Then open the debugger from **Tools > Internal Debugger...**, or with the bug icon on the toolbar, and type `?` for a list of commands.
+
+---
+
 (We need help in developing this emulator! See https://github.com/86Box/86Box/issues/7386 for details. Any and all help is appreciated.)
 
 86Box

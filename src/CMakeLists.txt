@@ -176,17 +176,11 @@ if(APPLE)
     # Force using the newest library if it's installed by homebrew
     set(CMAKE_FIND_FRAMEWORK LAST)
 
-    # setting our compilation target to macOS 10.15 Catalina if targeting Qt6,
-    # macOS 10.14 Mojave for vulkan support, 10.13 High Sierra otherwise
-    if (USE_QT6)
-        set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15")
-    else()
-        if(MOLTENVK)
-            set(CMAKE_OSX_DEPLOYMENT_TARGET "10.14")
-        else()
-            set(CMAKE_OSX_DEPLOYMENT_TARGET "27.0")
-        endif()
-    endif()
+    # Target the macOS we're building on, since the Homebrew libraries we link
+    # with are built for it (an older target just produces warnings)
+    execute_process(COMMAND sw_vers -productVersion
+                    OUTPUT_VARIABLE CMAKE_OSX_DEPLOYMENT_TARGET
+                    OUTPUT_STRIP_TRAILING_WHITESPACE)
 endif()
 
 find_package(Freetype REQUIRED)
