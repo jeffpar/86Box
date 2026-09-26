@@ -176,16 +176,14 @@ idw_help_command(const char *cmd)
     } else if (!strcmp(cmd, "h")) {
         idw_output("h               halt: stop execution and dump registers (Ctrl-C also halts)\n");
     } else if (!strcmp(cmd, "p") || !strcmp(cmd, "pr")) {
-        idw_output("p               ptrace: like t, but a CALL, HLT, INT, LOOP, or REP string\n"
-                   "                instruction runs until the next instruction is reached\n"
-                   "pr              likewise, then dump registers\n");
+        idw_output("p               step over instruction and print next instruction\n"
+                   "pr              step over instruction and print registers / next instruction\n");
     } else if (!strcmp(cmd, "r") || !strcmp(cmd, "rp")) {
-        idw_output("r               dump registers and the next instruction to execute\n"
-                   "rp              likewise, with segment bases and limits, descriptor\n"
-                   "                tables, TR, A20, and control registers\n");
+        idw_output("r               print registers and next instruction\n"
+                   "rp              print all registers and segment descriptors\n");
     } else if (!strcmp(cmd, "t") || !strcmp(cmd, "tr")) {
-        idw_output("t               trace: execute one instruction, then show the next\n"
-                   "tr              likewise, then dump registers\n");
+        idw_output("t               execute instruction and print next instruction\n"
+                   "tr              execute instruction and print registers / next instruction\n");
     } else if (!strcmp(cmd, "u")) {
         idw_output("u [addr [end]]  unassemble instructions at addr through end;\n"
                    "                end may be another addr or 'l' followed by a count\n");
